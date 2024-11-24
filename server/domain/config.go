@@ -25,6 +25,8 @@ type Observable interface {
 // ConfigEpoll 多个客户端观察者监听一个配置
 type ConfigEpoll struct {
 	ToKeys sync.Map //TODO 并发控制之后加一下
+	// 多个客户端同时修改一个配置，回调的过程中可能会造成多个客户端配置不一致的问题
+	//之后加上一个序列号，让所有配置的修改串行化，客户端可以通过序列号判断是否是最新的配置
 }
 
 var configEpoll *ConfigEpoll
