@@ -24,7 +24,9 @@ type Observable interface {
 
 // ConfigEpoll 多个客户端观察者监听一个配置
 type ConfigEpoll struct {
-	ToKeys sync.Map //TODO 并发控制之后加一下
+	mutex sync.RWMutex
+	//涉及到先读出，再修改，再写入的操作，得加锁，sync.Map不能满足需求
+	ToKeys map[string]*Config
 	// 多个客户端同时修改一个配置，回调的过程中可能会造成多个客户端配置不一致的问题
 	//之后加上一个序列号，让所有配置的修改串行化，客户端可以通过序列号判断是否是最新的配置
 }
@@ -33,7 +35,7 @@ var configEpoll *ConfigEpoll
 
 func init() {
 	configEpoll = &ConfigEpoll{
-		ToKeys: sync.Map{},
+		ToKeys: make(map[string]*Config),
 	}
 }
 
@@ -43,27 +45,25 @@ func NewConfigEpoll() *ConfigEpoll {
 }
 
 func (c *ConfigEpoll) Add(key string, observer *Listener) {
-	if _, ok := c.ToKeys.Load(key); !ok {
-		c.ToKeys.Store(key, &Config{
-			Key: key,
-		})
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if _, ok := c.ToKeys[key]; !ok {
+		c.ToKeys[key] = &Config{}
 	}
-	config, _ := c.ToKeys.Load(key)
-	config.(*Config).Add(observer)
-	c.ToKeys.Store(key, config)
+	c.ToKeys[key].Add(observer)
 }
 
 func (c *ConfigEpoll) Notify(config *common.Config) {
-	if _, ok := c.ToKeys.Load(config.Key); !ok {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	if _, ok := c.ToKeys[config.Key]; !ok {
 		return
 	}
-	c1, _ := c.ToKeys.Load(config.Key)
-	c1.(*Config).Notify(config)
+	c.ToKeys[config.Key].Notify(config)
 }
 
 // Config 配置，即被观察者
 type Config struct {
-	Key       string
 	observers []Observer
 }
 
